@@ -14,7 +14,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-func uploadDirToS3(sourceDir, bucketName, objectName string, endpoint, accessKey, secretKey string, useSSL bool) error {
+func uploadDirToS3(sourceDir, tmpDir string, bucketName, objectName string, endpoint, accessKey, secretKey string, useSSL bool) error {
 	// Создаем клиент MinIO
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
@@ -25,7 +25,7 @@ func uploadDirToS3(sourceDir, bucketName, objectName string, endpoint, accessKey
 	}
 
 	// Создаем временный архив
-	tempFile, err := os.CreateTemp("", "backup-*.tar.gz")
+	tempFile, err := os.CreateTemp(tmpDir, "backup-*.tar.gz")
 	if err != nil {
 		return err
 	}

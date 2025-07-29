@@ -5,6 +5,7 @@ go 1.24.1
 require (
 	github.com/aliakseiz/go-mysqldump v1.2.0
 	github.com/go-sql-driver/mysql v1.9.3
+	github.com/minio/minio-go/v7 v7.0.95
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -18,7 +19,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/minio/crc64nvme v1.0.2 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/minio/minio-go/v7 v7.0.95 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
