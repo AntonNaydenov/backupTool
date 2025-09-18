@@ -25,10 +25,20 @@ func uploadDirToS3(sourceDir, tmpDir string, bucketName, objectName string, endp
 	}
 
 	// Создаем временный архив
-	tempFile, err := os.CreateTemp(tmpDir, "backup-*.tar.gz")
+	// println("tmpDir:", tmpDir)
+	// println("sourceDir:", sourceDir)
+	// println("objectName:", objectName)
+	// println("bucketName:", bucketName)
+	// println("endpoint:", endpoint)
+	// println("accessKey:", accessKey)
+	// println("secretKey:", secretKey)
+	// println("useSSL:", useSSL)
+	// println("uploadDirToS3:", "uploadDirToS3")
+	tempFile, err := os.CreateTemp(tmpDir, objectName)
 	if err != nil {
 		return err
 	}
+	println("tempFile.Name:", tempFile.Name())
 	defer os.Remove(tempFile.Name())
 	defer tempFile.Close()
 
@@ -39,39 +49,52 @@ func uploadDirToS3(sourceDir, tmpDir string, bucketName, objectName string, endp
 	defer tw.Close()
 
 	// Архивируем каталог
-	if err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			log.Printf("Ошибка доступа к файлу %s: %v", path, err)
+			return nil // Пропустить проблемный файл
+		}
+
+		// Проверка прав на чтение файла
+		if !info.Mode().IsRegular() || info.Mode()&0444 == 0 {
+			log.Printf("Недостаточно прав для чтения файла %s", path)
+			return nil
 		}
 
 		header, err := tar.FileInfoHeader(info, info.Name())
 		if err != nil {
-			return err
+			log.Printf("Ошибка создания заголовка для %s: %v", path, err)
+			return nil
 		}
 
 		if len(path) <= len(sourceDir) {
 			header.Name = "" // или обработка ошибки
 		} else {
 			header.Name = filepath.ToSlash(path[len(sourceDir)+1:])
-		} // Убираем путь к корню
+		}
 
 		if err := tw.WriteHeader(header); err != nil {
-			return err
+			log.Printf("Ошибка записи заголовка для %s: %v", path, err)
+			return nil
 		}
 
 		if !info.IsDir() {
 			file, err := os.Open(path)
 			if err != nil {
-				return err
+				log.Printf("Ошибка открытия файла %s: %v", path, err)
+				return nil
 			}
 			defer file.Close()
 
 			if _, err := io.Copy(tw, file); err != nil {
-				return err
+				log.Printf("Ошибка копирования данных из %s: %v", path, err)
+				return nil
 			}
 		}
 		return nil
-	}); err != nil {
+	})
+
+	if err != nil {
 		return fmt.Errorf("failed to archive directory: %w", err)
 	}
 

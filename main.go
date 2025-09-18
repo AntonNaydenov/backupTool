@@ -45,8 +45,16 @@ type Config struct {
 }
 
 func main() {
+	// Настройка логирования в файл
+	logFile, err := os.OpenFile("/var/log/bckupTool.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		panic(fmt.Sprintf("Не удалось открыть файл логов: %v", err))
+	}
+	defer logFile.Close()
+	log.SetOutput(logFile) // Перенаправление всех логов в файл
+
 	var path string
-	flag.StringVar(&path, "f", "config.yaml", "path to config file")
+	flag.StringVar(&path, "f", "/etc/bckupTool/config.yaml", "path to config file")
 	flag.Parse()
 	yamlFile, err := os.ReadFile(path)
 	if err != nil {
@@ -72,9 +80,18 @@ func main() {
 		for _, website := range cfg.Web_site.List {
 			fmt.Printf("  Name: %s, Path: %s\n", website.Name, website.Path)
 			objName := website.Name + "/" + website.Name + "_archive.tar.gz"
+			// println("tmpDir:", cfg.Global.TmpDir)
+			// println("objName:", objName)
+			// println("bucket:", cfg.S3_config.Bucket)
+			// println("endpoint:", cfg.S3_config.Endpoint)
+			// println("accessKey:", cfg.S3_config.AccessKey)
+			// println("secretKey:", cfg.S3_config.SecretKey)
+			// println("useSSL:", cfg.S3_config.UseSSL)
+			// println("uploadDirToS3:", "uploadDirToS3")
 			err := uploadDirToS3(website.Path, cfg.Global.TmpDir, cfg.S3_config.Bucket, objName, cfg.S3_config.Endpoint, cfg.S3_config.AccessKey, cfg.S3_config.SecretKey, cfg.S3_config.UseSSL)
 			if err != nil {
-				log.Fatalf("Error uploading website to S3: %v", err)
+				log.Printf("Error uploading website to S3: %v", err)
+				continue
 			}
 		}
 	} else {
