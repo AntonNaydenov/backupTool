@@ -5,22 +5,22 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
+	"sync"
 )
 
 func uploadDirToS3(
 	sourceDir, tmpDir string,
-	bucketName, objectName string,
+	bucketName, objectPrefix string,
 	endpoint, accessKey, secretKey string,
-	useSSL, archive bool) error {
-
-	// Создаем клиент MinIO
+	useSSL, archive bool,
+	concurrency int, // Новое: количество параллельных потоков
+) error {
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: useSSL,
@@ -30,7 +30,7 @@ func uploadDirToS3(
 	}
 
 	if archive {
-		// Режим архивации: создаём .tar.gz и загружаем его как один объект
+		// Режим архивации: один файл, один поток
 		tempFile, err := os.CreateTemp(tmpDir, "backup-*.tar.gz")
 		if err != nil {
 			return err
@@ -90,37 +90,68 @@ func uploadDirToS3(
 		size := fileInfo.Size()
 		tempFile.Seek(0, io.SeekStart)
 
-		log.Printf("Uploading archive %s to S3 bucket %s as %s", tempFile.Name(), bucketName, objectName)
-		_, err = client.PutObject(context.Background(), bucketName, objectName, tempFile, size, minio.PutObjectOptions{})
+		log.Printf("Uploading archive %s to S3 bucket %s as %s", tempFile.Name(), bucketName, objectPrefix+"_archive.tar.gz")
+		_, err = client.PutObject(context.Background(), bucketName, objectPrefix+"_archive.tar.gz", tempFile, size, minio.PutObjectOptions{})
 		return err
 	} else {
-		// Режим без архивации: загружаем каждый файл отдельно
-		return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		// Режим без архивации: загрузка каждого файла отдельно, с параллелизмом
+		var wg sync.WaitGroup
+		files := make(chan string, concurrency)
+		errorsChan := make(chan error, 100)
+
+		for i := 0; i < concurrency; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for path := range files {
+					objectKey := objectPrefix + "/" + path[len(sourceDir)+1:]
+
+					log.Printf("Uploading file %s to S3 bucket %s as %s", path, bucketName, objectKey)
+
+					file, err := os.Open(path)
+					if err != nil {
+						errorsChan <- fmt.Errorf("failed to open file %s: %w", path, err)
+						continue
+					}
+					defer file.Close()
+
+					fileInfo, _ := file.Stat()
+					size := fileInfo.Size()
+
+					_, err = client.PutObject(context.Background(), bucketName, objectKey, file, size, minio.PutObjectOptions{})
+					if err != nil {
+						errorsChan <- fmt.Errorf("failed to upload %s: %w", path, err)
+					}
+				}
+			}()
+		}
+
+		// Сбор всех файлов для загрузки
+		if err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
-
-			if info.IsDir() {
-				return nil // Пропускаем директории
+			if !info.IsDir() {
+				files <- path
 			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to collect files: %w", err)
+		}
 
-			// Формируем имя объекта в S3 (удаляем префикс sourceDir)
-			objectKey := objectName[:len(objectName)-len("_archive.tar.gz")] + "/" +
-				path[len(sourceDir)+1:]
+		close(files)
+		wg.Wait()
 
-			log.Printf("Uploading file %s to S3 bucket %s as %s", path, bucketName, objectKey)
-
-			file, err := os.Open(path)
-			if err != nil {
-				return err
+		// Проверка ошибок
+		if len(errorsChan) > 0 {
+			var firstError error
+			for err := range errorsChan {
+				firstError = err
+				log.Printf("Upload error: %v", err)
 			}
-			defer file.Close()
+			return firstError
+		}
 
-			fileInfo, _ := file.Stat()
-			size := fileInfo.Size()
-
-			_, err = client.PutObject(context.Background(), bucketName, objectKey, file, size, minio.PutObjectOptions{})
-			return err
-		})
+		return nil
 	}
 }

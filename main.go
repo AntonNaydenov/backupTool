@@ -15,12 +15,13 @@ type WebSite struct {
 }
 type Config struct {
 	Global struct {
-		Host      string `yaml:"host"`
-		Port      string `yaml:"port"`
-		SourceDir string `yaml:"sourceDir"`
-		DestDir   string `yaml:"destDir"`
-		TmpDir    string `yaml:"tmpDir"`
-		Archive   bool   `yaml:"archive"` // Флаг для включения/выключения архивации
+		Host        string `yaml:"host"`
+		Port        string `yaml:"port"`
+		SourceDir   string `yaml:"sourceDir"`
+		DestDir     string `yaml:"destDir"`
+		TmpDir      string `yaml:"tmpDir"`
+		Archive     bool   `yaml:"archive"`     // Флаг для включения/выключения архивации
+		Concurrency int    `yaml:"concurrency"` // Количество параллельных потоков
 	} `yaml:"global"`
 	Web_site struct {
 		Enable bool      `yaml:"enable"`
@@ -78,19 +79,10 @@ func main() {
 	}
 	if cfg.Web_site.Enable {
 		fmt.Println("Web site backup enable")
-		fmt.Println("Websites list:")
 		for _, website := range cfg.Web_site.List {
-			fmt.Printf("  Name: %s, Path: %s\n", website.Name, website.Path)
-			objName := website.Name + "/" + website.Name + "_archive.tar.gz"
-			println("tmpDir:", cfg.Global.TmpDir)
-			println("objName:", objName)
-			println("bucket:", cfg.S3_config.Bucket)
-			println("endpoint:", cfg.S3_config.Endpoint)
-			println("accessKey:", cfg.S3_config.AccessKey)
-			println("secretKey:", cfg.S3_config.SecretKey)
-			println("useSSL:", cfg.S3_config.UseSSL)
-			println("uploadDirToS3:", "uploadDirToS3")
-			err := uploadDirToS3(website.Path,
+			objName := website.Name + "/"
+			err := uploadDirToS3(
+				website.Path,
 				cfg.Global.TmpDir,
 				cfg.S3_config.Bucket,
 				objName,
@@ -98,7 +90,9 @@ func main() {
 				cfg.S3_config.AccessKey,
 				cfg.S3_config.SecretKey,
 				cfg.S3_config.UseSSL,
-				cfg.Global.Archive) // Передаём флаг архивации
+				cfg.Global.Archive,
+				cfg.Global.Concurrency, // Передаём количество потоков
+			)
 			if err != nil {
 				log.Printf("Error uploading website %s to S3: %v", website.Name, err)
 				continue
