@@ -1,0 +1,16 @@
+global:
+  archive: true  # Или false
+  tmpDir: /tmp
+  sourceDir: /var/www/html
+web_site:
+  enable: true
+  list:
+    - name: mysite
+      path: /var/www/html
+s3_config:
+  enable: true
+  bucket: my-bucket
+  endpoint: s3.amazonaws.com
+  accessKey: YOUR_ACCESS_KEY
+  secretKey: YOUR_SECRET_KEY
+  useSSL: true
