@@ -14,3 +14,11 @@ s3_config:
   accessKey: YOUR_ACCESS_KEY
   secretKey: YOUR_SECRET_KEY
   useSSL: true
+database:
+  enable: true
+  host: localhost
+  port: 3306
+  user: root
+  password: password
+  database_list:
+    - mydb

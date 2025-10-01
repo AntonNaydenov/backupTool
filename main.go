@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
+	_ "github.com/go-sql-driver/mysql"
 	"gopkg.in/yaml.v3"
 )
 
@@ -73,6 +75,51 @@ func main() {
 		fmt.Println("Databases list:")
 		for _, database := range cfg.Database.Database_list {
 			fmt.Println(database)
+
+			// Подключаемся к базе данных
+			db, err := connectDB(cfg.Database.User, cfg.Database.Password, cfg.Database.Host, cfg.Database.Port, database)
+			if err != nil {
+				log.Printf("Error connecting to database %s: %v", database, err)
+				continue
+			}
+			defer db.Close()
+
+			// Создаем директорию для дампа
+			dumpDir := filepath.Join(cfg.Global.TmpDir, "dumps", database)
+			if err := os.MkdirAll(dumpDir, 0755); err != nil {
+				log.Printf("Error creating dump directory for database %s: %v", database, err)
+				continue
+			}
+
+			// Выполняем дамп базы данных
+			if err := dumpDatabase(db, database, dumpDir, cfg.Global.Concurrency); err != nil {
+				log.Printf("Error dumping database %s: %v", database, err)
+				continue
+			}
+
+			fmt.Printf("Database %s dumped successfully to %s\n", database, dumpDir)
+
+			// Если включена загрузка в S3, загружаем дамп
+			if cfg.S3_config.Enable {
+				objName := "databases/" + database + "/"
+				err := uploadDirToS3(
+					dumpDir,
+					cfg.Global.TmpDir,
+					cfg.S3_config.Bucket,
+					objName,
+					cfg.S3_config.Endpoint,
+					cfg.S3_config.AccessKey,
+					cfg.S3_config.SecretKey,
+					cfg.S3_config.UseSSL,
+					cfg.Global.Archive,
+					cfg.Global.Concurrency, // Передаём количество потоков
+				)
+				if err != nil {
+					log.Printf("Error uploading database %s dump to S3: %v", database, err)
+					continue
+				}
+				fmt.Printf("Database %s dump uploaded to S3 successfully\n", database)
+			}
 		}
 	} else {
 		fmt.Println("Database backup disable")
